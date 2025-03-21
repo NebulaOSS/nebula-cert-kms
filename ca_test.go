@@ -40,6 +40,8 @@ func Test_caHelp(t *testing.T) {
 			"    \tOptional: comma separated list of ip address and network in CIDR notation. This will limit which ip addresses and networks subordinate certs can use in networks\n"+
 			"  -out-crt string\n"+
 			"    \tOptional: path to write the certificate to (default \"ca.crt\")\n"+
+			"  -out-qr string\n"+
+			"    \tOptional: output a qr code image (png) of the certificate\n"+
 			"  -profile string\n"+
 			"    \tOptional: AWS Profile\n"+
 			"  -region string\n"+

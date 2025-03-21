@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nebulaoss/nebula-cert-kms/certkms"
+	"github.com/skip2/go-qrcode"
 	"github.com/slackhq/nebula/cert"
 )
 
@@ -19,6 +20,7 @@ type caFlags struct {
 	name           *string
 	duration       *time.Duration
 	outCertPath    *string
+	outQRPath      *string
 	groups         *string
 	networks       *string
 	unsafeNetworks *string
@@ -39,6 +41,7 @@ func newCaFlags() *caFlags {
 	cf.version = cf.set.Uint("version", uint(cert.Version2), "Optional: version of the certificate format to use")
 	cf.duration = cf.set.Duration("duration", time.Duration(time.Hour*8760), "Optional: amount of time the certificate should be valid for. Valid time units are seconds: \"s\", minutes: \"m\", hours: \"h\"")
 	cf.outCertPath = cf.set.String("out-crt", "ca.crt", "Optional: path to write the certificate to")
+	cf.outQRPath = cf.set.String("out-qr", "", "Optional: output a qr code image (png) of the certificate")
 	cf.groups = cf.set.String("groups", "", "Optional: comma separated list of groups. This will limit which groups subordinate certs can use")
 	cf.networks = cf.set.String("networks", "", "Optional: comma separated list of ip address and network in CIDR notation. This will limit which ip addresses and networks subordinate certs can use in networks")
 	cf.unsafeNetworks = cf.set.String("unsafe-networks", "", "Optional: comma separated list of ip address and network in CIDR notation. This will limit which ip addresses and networks subordinate certs can use in unsafe networks")
@@ -185,6 +188,18 @@ func ca(args []string, out io.Writer, errOut io.Writer) error {
 	err = os.WriteFile(*cf.outCertPath, b, 0600)
 	if err != nil {
 		return fmt.Errorf("error while writing out-crt: %s", err)
+	}
+
+	if *cf.outQRPath != "" {
+		b, err = qrcode.Encode(string(b), qrcode.Medium, -5)
+		if err != nil {
+			return fmt.Errorf("error while generating qr code: %s", err)
+		}
+
+		err = os.WriteFile(*cf.outQRPath, b, 0600)
+		if err != nil {
+			return fmt.Errorf("error while writing out-qr: %s", err)
+		}
 	}
 
 	return nil
