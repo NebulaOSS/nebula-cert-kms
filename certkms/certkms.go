@@ -13,16 +13,9 @@ import (
 	"github.com/slackhq/nebula/cert"
 )
 
-type NebulaSigner interface {
-	// Provides Public() and Sign(...) methods
+// NebulaSigner wraps a crypto.Signer but also exposes a Nebula cert.SignerLambda
+type NebulaSigner struct {
 	crypto.Signer
-
-	CertSignerLambda() cert.SignerLambda
-}
-
-type nebulaSigner struct {
-	crypto.Signer
-
 	signerLambda cert.SignerLambda
 }
 
@@ -34,7 +27,7 @@ type AWSConfig struct {
 
 // BasicSigner builds a NebulaSigner from a basic AWS config.
 // More complicated uses can use Signer
-func BasicSigner(config AWSConfig, arn string) (NebulaSigner, error) {
+func BasicSigner(config AWSConfig, arn string) (*NebulaSigner, error) {
 	var opts []func(*awsconfig.LoadOptions) error
 	if config.Region != "" {
 		opts = append(opts, awsconfig.WithRegion(config.Region))
@@ -60,19 +53,19 @@ func BasicSigner(config AWSConfig, arn string) (NebulaSigner, error) {
 }
 
 // Signer builds a NebulaSigner using kmssigner and the given kms.Client
-func Signer(client *kms.Client, arn string) (NebulaSigner, error) {
+func Signer(client *kms.Client, arn string) (*NebulaSigner, error) {
 	ks, err := kmssigner.New(client, arn)
 	if err != nil {
 		return nil, err
 	}
 
-	return &nebulaSigner{
+	return &NebulaSigner{
 		Signer:       ks,
 		signerLambda: certSignerLambda(ks),
 	}, nil
 }
 
-func (n *nebulaSigner) CertSignerLambda() cert.SignerLambda {
+func (n *NebulaSigner) CertSignerLambda() cert.SignerLambda {
 	return n.signerLambda
 }
 
