@@ -62,17 +62,14 @@ func main() {
 
 	switch args[0] {
 	case "ca":
-		err = ca(args[1:], os.Stdout, os.Stderr, StdinPasswordReader{})
-	case "keygen":
-		err = keygen(args[1:], os.Stdout, os.Stderr)
+		err = ca(args[1:], os.Stdout, os.Stderr)
 	case "sign":
 		err = signCert(args[1:], os.Stdout, os.Stderr, StdinPasswordReader{})
-	case "print":
-		err = printCert(args[1:], os.Stdout, os.Stderr)
 	case "verify":
 		err = verify(args[1:], os.Stdout, os.Stderr)
 	default:
 		err = fmt.Errorf("unknown mode: %s", args[0])
+
 	}
 
 	if err != nil {
@@ -96,12 +93,8 @@ func handleError(mode string, e error, out io.Writer) int {
 		switch mode {
 		case "ca":
 			caHelp(out)
-		case "keygen":
-			keygenHelp(out)
 		case "sign":
 			signHelp(out)
-		case "print":
-			printHelp(out)
 		case "verify":
 			verifyHelp(out)
 		}
@@ -123,9 +116,7 @@ func help(err string, out io.Writer) {
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "  Modes:")
 	fmt.Fprintln(out, "    "+caSummary())
-	fmt.Fprintln(out, "    "+keygenSummary())
 	fmt.Fprintln(out, "    "+signSummary())
-	fmt.Fprintln(out, "    "+printSummary())
 	fmt.Fprintln(out, "    "+verifySummary())
 	fmt.Fprintln(out, "")
 	fmt.Fprintf(out, "  To see usage for a given mode, use %s <mode> -h\n", os.Args[0])

@@ -19,9 +19,7 @@ func Test_help(t *testing.T) {
 		"    -h, -help: Prints this help message\n\n" +
 		"  Modes:\n" +
 		"    " + caSummary() + "\n" +
-		"    " + keygenSummary() + "\n" +
 		"    " + signSummary() + "\n" +
-		"    " + printSummary() + "\n" +
 		"    " + verifySummary() + "\n" +
 		"\n" +
 		"  To see usage for a given mode, use " + os.Args[0] + " <mode> -h\n"
@@ -59,7 +57,7 @@ func Test_handleError(t *testing.T) {
 	assert.Equal(t, "Error: test error\n", ob.String())
 
 	// test all modes with help error
-	modes := map[string]func(io.Writer){"ca": caHelp, "print": printHelp, "sign": signHelp, "verify": verifyHelp}
+	modes := map[string]func(io.Writer){"ca": caHelp, "sign": signHelp, "verify": verifyHelp}
 	eb := &bytes.Buffer{}
 	for mode, fn := range modes {
 		ob.Reset()
