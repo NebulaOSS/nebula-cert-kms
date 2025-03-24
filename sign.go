@@ -1,9 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ecdh"
+	"crypto/ecdsa"
 	"crypto/rand"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -12,16 +13,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nebulaoss/nebula-cert-kms/certkms"
 	"github.com/skip2/go-qrcode"
 	"github.com/slackhq/nebula/cert"
-	"github.com/slackhq/nebula/pkclient"
 	"golang.org/x/crypto/curve25519"
 )
 
 type signFlags struct {
 	set            *flag.FlagSet
 	version        *uint
-	caKeyPath      *string
 	caCertPath     *string
 	name           *string
 	networks       *string
@@ -33,18 +33,16 @@ type signFlags struct {
 	outQRPath      *string
 	groups         *string
 
-	p11url *string
-
-	// Deprecated options
-	ip      *string
-	subnets *string
+	assumeRole *string
+	profile    *string
+	region     *string
+	arn        *string
 }
 
 func newSignFlags() *signFlags {
 	sf := signFlags{set: flag.NewFlagSet("sign", flag.ContinueOnError)}
 	sf.set.Usage = func() {}
 	sf.version = sf.set.Uint("version", 0, "Optional: version of the certificate format to use, the default is to create both v1 and v2 certificates.")
-	sf.caKeyPath = sf.set.String("ca-key", "ca.key", "Optional: path to the signing CA key")
 	sf.caCertPath = sf.set.String("ca-crt", "ca.crt", "Optional: path to the signing CA cert")
 	sf.name = sf.set.String("name", "", "Required: name of the cert, usually a hostname")
 	sf.networks = sf.set.String("networks", "", "Required: comma separated list of ip address and network in CIDR notation to assign to this cert")
@@ -55,43 +53,34 @@ func newSignFlags() *signFlags {
 	sf.outCertPath = sf.set.String("out-crt", "", "Optional: path to write the certificate to")
 	sf.outQRPath = sf.set.String("out-qr", "", "Optional: output a qr code image (png) of the certificate")
 	sf.groups = sf.set.String("groups", "", "Optional: comma separated list of groups")
-	sf.p11url = p11Flag(sf.set)
 
-	sf.ip = sf.set.String("ip", "", "Deprecated, see -networks")
-	sf.subnets = sf.set.String("subnets", "", "Deprecated, see -unsafe-networks")
+	sf.assumeRole = sf.set.String("assume-role", "", "Optional: AWS AssumeRole")
+	sf.profile = sf.set.String("profile", "", "Optional: AWS Profile")
+	sf.region = sf.set.String("region", "", "Optional: AWS Region")
+	sf.arn = sf.set.String("arn", "", "AWS ARN")
+
 	return &sf
 }
 
-func signCert(args []string, out io.Writer, errOut io.Writer, pr PasswordReader) error {
+func signCert(args []string, out io.Writer, errOut io.Writer) error {
 	sf := newSignFlags()
 	err := sf.set.Parse(args)
 	if err != nil {
 		return err
 	}
 
-	isP11 := len(*sf.p11url) > 0
-
-	if !isP11 {
-		if err := mustFlagString("ca-key", sf.caKeyPath); err != nil {
-			return err
-		}
-	}
 	if err := mustFlagString("ca-crt", sf.caCertPath); err != nil {
 		return err
 	}
 	if err := mustFlagString("name", sf.name); err != nil {
 		return err
 	}
-	if !isP11 && *sf.inPubPath != "" && *sf.outKeyPath != "" {
+	if *sf.inPubPath != "" && *sf.outKeyPath != "" {
 		return newHelpErrorf("cannot set both -in-pub and -out-key")
 	}
 
 	var v4Networks []netip.Prefix
 	var v6Networks []netip.Prefix
-	if *sf.networks == "" && *sf.ip != "" {
-		// Pull up deprecated -ip flag if needed
-		*sf.networks = *sf.ip
-	}
 
 	if len(*sf.networks) == 0 {
 		return newHelpErrorf("-networks is required")
@@ -100,49 +89,6 @@ func signCert(args []string, out io.Writer, errOut io.Writer, pr PasswordReader)
 	version := cert.Version(*sf.version)
 	if version != 0 && version != cert.Version1 && version != cert.Version2 {
 		return newHelpErrorf("-version must be either %v or %v", cert.Version1, cert.Version2)
-	}
-
-	var curve cert.Curve
-	var caKey []byte
-
-	if !isP11 {
-		var rawCAKey []byte
-		rawCAKey, err := os.ReadFile(*sf.caKeyPath)
-
-		if err != nil {
-			return fmt.Errorf("error while reading ca-key: %s", err)
-		}
-
-		// naively attempt to decode the private key as though it is not encrypted
-		caKey, _, curve, err = cert.UnmarshalSigningPrivateKeyFromPEM(rawCAKey)
-		if errors.Is(err, cert.ErrPrivateKeyEncrypted) {
-			// ask for a passphrase until we get one
-			var passphrase []byte
-			for i := 0; i < 5; i++ {
-				out.Write([]byte("Enter passphrase: "))
-				passphrase, err = pr.ReadPassword()
-
-				if errors.Is(err, ErrNoTerminal) {
-					return fmt.Errorf("ca-key is encrypted and must be decrypted interactively")
-				} else if err != nil {
-					return fmt.Errorf("error reading password: %s", err)
-				}
-
-				if len(passphrase) > 0 {
-					break
-				}
-			}
-			if len(passphrase) == 0 {
-				return fmt.Errorf("cannot open encrypted ca-key without passphrase")
-			}
-
-			curve, caKey, _, err = cert.DecryptAndUnmarshalSigningPrivateKey(passphrase, rawCAKey)
-			if err != nil {
-				return fmt.Errorf("error while parsing encrypted ca-key: %s", err)
-			}
-		} else if err != nil {
-			return fmt.Errorf("error while parsing ca-key: %s", err)
-		}
 	}
 
 	rawCACert, err := os.ReadFile(*sf.caCertPath)
@@ -155,10 +101,40 @@ func signCert(args []string, out io.Writer, errOut io.Writer, pr PasswordReader)
 		return fmt.Errorf("error while parsing ca-crt: %s", err)
 	}
 
-	if !isP11 {
-		if err := caCert.VerifyPrivateKey(curve, caKey); err != nil {
-			return fmt.Errorf("refusing to sign, root certificate does not match private key")
+	s, err := certkms.BasicSigner(certkms.AWSConfig{
+		AssumeRole: *sf.assumeRole,
+		Profile:    *sf.profile,
+		Region:     *sf.region,
+	}, *sf.arn)
+	if err != nil {
+		return fmt.Errorf("error creating KMS Signer: %s", err)
+	}
+
+	curve := caCert.Curve()
+
+	var arnPub []byte
+	switch curve {
+	case cert.Curve_P256:
+		curve = cert.Curve_P256
+
+		pubkey, ok := s.Public().(*ecdsa.PublicKey)
+		if !ok {
+			return fmt.Errorf("KMS key type is invalid, expected P256 but got: %T", s.Public())
 		}
+
+		// ecdh.Bytes lets us get at the encoded bytes, even though
+		// we aren't using ECDH here.
+		ePub, err := pubkey.ECDH()
+		if err != nil {
+			return fmt.Errorf("error while converting ecdsa key: %s", err)
+		}
+		arnPub = ePub.Bytes()
+	default:
+		return fmt.Errorf("invalid curve: %s", curve)
+	}
+
+	if !bytes.Equal(caCert.PublicKey(), arnPub) {
+		return fmt.Errorf("refusing to sign, root certificate does not match arn Public Key")
 	}
 
 	if caCert.Expired(time.Now()) {
@@ -190,10 +166,6 @@ func signCert(args []string, out io.Writer, errOut io.Writer, pr PasswordReader)
 
 	var v4UnsafeNetworks []netip.Prefix
 	var v6UnsafeNetworks []netip.Prefix
-	if *sf.unsafeNetworks == "" && *sf.subnets != "" {
-		// Pull up deprecated -subnets flag if needed
-		*sf.unsafeNetworks = *sf.subnets
-	}
 
 	if *sf.unsafeNetworks != "" {
 		for _, rs := range strings.Split(*sf.unsafeNetworks, ",") {
@@ -224,18 +196,6 @@ func signCert(args []string, out io.Writer, errOut io.Writer, pr PasswordReader)
 	}
 
 	var pub, rawPriv []byte
-	var p11Client *pkclient.PKClient
-
-	if isP11 {
-		curve = cert.Curve_P256
-		p11Client, err = pkclient.FromUrl(*sf.p11url)
-		if err != nil {
-			return fmt.Errorf("error while creating PKCS#11 client: %w", err)
-		}
-		defer func(client *pkclient.PKClient) {
-			_ = client.Close()
-		}(p11Client)
-	}
 
 	if *sf.inPubPath != "" {
 		var pubCurve cert.Curve
@@ -250,11 +210,6 @@ func signCert(args []string, out io.Writer, errOut io.Writer, pr PasswordReader)
 		}
 		if pubCurve != curve {
 			return fmt.Errorf("curve of in-pub does not match ca")
-		}
-	} else if isP11 {
-		pub, err = p11Client.GetPubKey()
-		if err != nil {
-			return fmt.Errorf("error while getting public key with PKCS#11: %w", err)
 		}
 	} else {
 		pub, rawPriv = newKeypair(curve)
@@ -308,16 +263,9 @@ func signCert(args []string, out io.Writer, errOut io.Writer, pr PasswordReader)
 		}
 
 		var nc cert.Certificate
-		if p11Client == nil {
-			nc, err = t.Sign(caCert, curve, caKey)
-			if err != nil {
-				return fmt.Errorf("error while signing: %w", err)
-			}
-		} else {
-			nc, err = t.SignWith(caCert, curve, p11Client.SignASN1)
-			if err != nil {
-				return fmt.Errorf("error while signing with PKCS#11: %w", err)
-			}
+		nc, err = t.SignWith(caCert, curve, s.CertSignerLambda())
+		if err != nil {
+			return fmt.Errorf("error while signing with PKCS#11: %w", err)
 		}
 
 		crts = append(crts, nc)
@@ -338,22 +286,15 @@ func signCert(args []string, out io.Writer, errOut io.Writer, pr PasswordReader)
 		}
 
 		var nc cert.Certificate
-		if p11Client == nil {
-			nc, err = t.Sign(caCert, curve, caKey)
-			if err != nil {
-				return fmt.Errorf("error while signing: %w", err)
-			}
-		} else {
-			nc, err = t.SignWith(caCert, curve, p11Client.SignASN1)
-			if err != nil {
-				return fmt.Errorf("error while signing with PKCS#11: %w", err)
-			}
+		nc, err = t.SignWith(caCert, curve, s.CertSignerLambda())
+		if err != nil {
+			return fmt.Errorf("error while signing with PKCS#11: %w", err)
 		}
 
 		crts = append(crts, nc)
 	}
 
-	if !isP11 && *sf.inPubPath == "" {
+	if *sf.inPubPath == "" {
 		if _, err := os.Stat(*sf.outKeyPath); err == nil {
 			return fmt.Errorf("refusing to overwrite existing key: %s", *sf.outKeyPath)
 		}

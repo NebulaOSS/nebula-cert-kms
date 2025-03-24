@@ -64,7 +64,7 @@ func main() {
 	case "ca":
 		err = ca(args[1:], os.Stdout, os.Stderr)
 	case "sign":
-		err = signCert(args[1:], os.Stdout, os.Stderr, StdinPasswordReader{})
+		err = signCert(args[1:], os.Stdout, os.Stderr)
 	case "verify":
 		err = verify(args[1:], os.Stdout, os.Stderr)
 	default:
