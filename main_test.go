@@ -20,7 +20,6 @@ func Test_help(t *testing.T) {
 		"  Modes:\n" +
 		"    " + caSummary() + "\n" +
 		"    " + signSummary() + "\n" +
-		"    " + verifySummary() + "\n" +
 		"\n" +
 		"  To see usage for a given mode, use " + os.Args[0] + " <mode> -h\n"
 
@@ -57,7 +56,7 @@ func Test_handleError(t *testing.T) {
 	assert.Equal(t, "Error: test error\n", ob.String())
 
 	// test all modes with help error
-	modes := map[string]func(io.Writer){"ca": caHelp, "sign": signHelp, "verify": verifyHelp}
+	modes := map[string]func(io.Writer){"ca": caHelp, "sign": signHelp}
 	eb := &bytes.Buffer{}
 	for mode, fn := range modes {
 		ob.Reset()
@@ -79,12 +78,4 @@ func assertHelpError(t *testing.T, err error, msg string) {
 	}
 
 	require.EqualError(t, err, msg)
-}
-
-func optionalPkcs11String(msg string) string {
-	if p11Supported() {
-		return msg
-	} else {
-		return ""
-	}
 }
