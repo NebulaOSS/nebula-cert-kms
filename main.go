@@ -65,8 +65,6 @@ func main() {
 		err = ca(args[1:], os.Stdout, os.Stderr)
 	case "sign":
 		err = signCert(args[1:], os.Stdout, os.Stderr)
-	case "verify":
-		err = verify(args[1:], os.Stdout, os.Stderr)
 	default:
 		err = fmt.Errorf("unknown mode: %s", args[0])
 
@@ -95,8 +93,6 @@ func handleError(mode string, e error, out io.Writer) int {
 			caHelp(out)
 		case "sign":
 			signHelp(out)
-		case "verify":
-			verifyHelp(out)
 		}
 	}
 
@@ -117,7 +113,6 @@ func help(err string, out io.Writer) {
 	fmt.Fprintln(out, "  Modes:")
 	fmt.Fprintln(out, "    "+caSummary())
 	fmt.Fprintln(out, "    "+signSummary())
-	fmt.Fprintln(out, "    "+verifySummary())
 	fmt.Fprintln(out, "")
 	fmt.Fprintf(out, "  To see usage for a given mode, use %s <mode> -h\n", os.Args[0])
 }
