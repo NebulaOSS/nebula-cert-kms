@@ -1,6 +1,6 @@
 module github.com/nebulaoss/nebula-cert-kms
 
-go 1.24.1
+go 1.25
 
 // update to use aws-sdk-go-v2
 // https://github.com/psanford/kmssigner/pull/1
@@ -14,9 +14,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.17
 	github.com/psanford/kmssigner v0.0.0-20250320171517-c30ff4fd4702
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
-	github.com/slackhq/nebula v1.9.5-0.20250729171207-7da79685fff9
-	github.com/stretchr/testify v1.10.0
-	golang.org/x/crypto v0.37.0
+	github.com/slackhq/nebula v1.10.0
+	github.com/stretchr/testify v1.11.1
+	golang.org/x/crypto v0.45.0
 )
 
 require (
@@ -30,12 +30,11 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.29.1 // indirect
 	github.com/aws/smithy-go v1.22.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rogpeppe/go-internal v1.10.0 // indirect
-	golang.org/x/sys v0.32.0 // indirect
-	google.golang.org/protobuf v1.36.6 // indirect
+	golang.org/x/sys v0.38.0 // indirect
+	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
